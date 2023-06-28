@@ -1,0 +1,15 @@
+export declare const GC_PUBSUB_DEFAULT_TOPIC = 'default_topic';
+export declare const GC_PUBSUB_DEFAULT_SUBSCRIPTION = 'default_subscription';
+export declare const GC_PUBSUB_DEFAULT_PUBLISHER_CONFIG: {};
+export declare const GC_PUBSUB_DEFAULT_SUBSCRIBER_CONFIG: {};
+export declare const GC_PUBSUB_DEFAULT_CLIENT_CONFIG: {};
+export declare const GC_PUBSUB_DEFAULT_NO_ACK = true;
+export declare const GC_PUBSUB_DEFAULT_INIT = true;
+export declare const GC_PUBSUB_DEFAULT_CHECK_EXISTENCE = true;
+export declare const GC_PUBSUB_DEFAULT_USE_ATTRIBUTES = false;
+export declare const ALREADY_EXISTS = 6;
+export declare const GC_PUBSUB_DEFAULT_AUTO_RESUME = false;
+export declare const GC_PUBSUB_DEFAULT_CREATE_SUBSCRIPTION_OPTIONS: {};
+export declare const GC_PUBSUB_CLIENT_PREFIX = 'gcpubsubclient:';
+export declare const GC_AUTO_DELETE_SUBCRIPTION_ON_SHUTDOWN = false;
+export declare const GC_PUBSUB_DEFAULT_CLIENT_ID_FILTER = false;
