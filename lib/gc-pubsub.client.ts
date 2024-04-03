@@ -31,6 +31,7 @@ import {
   GC_PUBSUB_DEFAULT_CREATE_SUBSCRIPTION_OPTIONS,
   GC_PUBSUB_DEFAULT_CLIENT_ID_FILTER,
   GC_AUTO_DELETE_SUBSCRIPTION_ON_SHUTDOWN,
+  GC_AUTO_DELETE_REPLY_TOPIC_ON_SHUTDOWN,
 } from './gc-pubsub.constants';
 import { GCPubSubClientOptions } from './gc-pubsub.interface';
 import { closePubSub, closeSubscription, flushTopic } from './gc-pubsub.utils';
@@ -54,6 +55,7 @@ export class GCPubSubClient extends ClientProxy {
   protected readonly autoResume: boolean;
   protected readonly createSubscriptionOptions: CreateSubscriptionOptions;
   protected readonly autoDeleteSubscriptionOnShutdown: boolean;
+  protected readonly autoDeleteReplyTopicOnShutdown: boolean;
   protected readonly clientIdFilter: boolean;
   protected readonly parser: IGCPubSubParser;
 
@@ -100,6 +102,10 @@ export class GCPubSubClient extends ClientProxy {
       this.options.autoDeleteSubscriptionOnShutdown ??
       GC_AUTO_DELETE_SUBSCRIPTION_ON_SHUTDOWN;
 
+    this.autoDeleteReplyTopicOnShutdown =
+      this.options.autoDeleteReplyTopicOnShutdown ??
+      GC_AUTO_DELETE_REPLY_TOPIC_ON_SHUTDOWN;
+
     this.clientIdFilter =
       this.options.clientIdFilter ?? GC_PUBSUB_DEFAULT_CLIENT_ID_FILTER;
 
@@ -115,8 +121,8 @@ export class GCPubSubClient extends ClientProxy {
 
   public async close(): Promise<void> {
     await flushTopic(this.topic);
-    if (this.options.autoDeleteReplyTopicOnShutdown) {
-      await this.client.topic(this.topicName).delete();
+    if (this.autoDeleteReplyTopicOnShutdown) {
+      await this.client.topic(this.replyTopicName).delete();
     }
     if (this.autoDeleteSubscriptionOnShutdown) {
       try {

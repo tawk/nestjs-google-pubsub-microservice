@@ -12,5 +12,6 @@ export const GC_PUBSUB_DEFAULT_AUTO_RESUME = false;
 export const GC_PUBSUB_DEFAULT_CREATE_SUBSCRIPTION_OPTIONS = {};
 export const GC_PUBSUB_CLIENT_PREFIX = 'gcpubsubclient:';
 export const GC_AUTO_DELETE_SUBSCRIPTION_ON_SHUTDOWN = false;
+export const GC_AUTO_DELETE_REPLY_TOPIC_ON_SHUTDOWN = false;
 export const GC_PUBSUB_DEFAULT_CLIENT_ID_FILTER = false;
 export const GC_PUBSUB_DEFAULT_ACK_AFTER_RESPONSE = true;

@@ -553,7 +553,11 @@ describe('GCPubSubClient', () => {
         await client.close();
       });
       it('should delete subscription on close', () => {
-        expect(topicMock.delete.calledOnce).to.be.true;
+        expect(pubsub.topic.getCall(1).args[0]).to.eql(
+          client['replyTopicName'],
+        );
+        const topic = pubsub.topic.getCall(1).returnValue;
+        expect(topic.delete.calledOnce).to.be.true;
       });
     });
   });
