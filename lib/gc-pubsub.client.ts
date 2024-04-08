@@ -30,17 +30,18 @@ import {
   GC_PUBSUB_DEFAULT_AUTO_RESUME,
   GC_PUBSUB_DEFAULT_CREATE_SUBSCRIPTION_OPTIONS,
   GC_PUBSUB_DEFAULT_CLIENT_ID_FILTER,
-  GC_AUTO_DELETE_SUBCRIPTION_ON_SHUTDOWN,
+  GC_AUTO_DELETE_SUBSCRIPTION_ON_SHUTDOWN,
+  GC_AUTO_DELETE_REPLY_TOPIC_ON_SHUTDOWN,
 } from './gc-pubsub.constants';
 import { GCPubSubClientOptions } from './gc-pubsub.interface';
 import { closePubSub, closeSubscription, flushTopic } from './gc-pubsub.utils';
-import { UUID, randomUUID } from 'crypto';
 import { GCPubSubMessageSerializer } from './gc-message.serializer';
 import { GCPubSubMessage } from './gc-message.builder';
 import { GCPubSubParser, IGCPubSubParser } from './gc-pubsub.parser';
+import { v4 as uuidV4 } from 'uuid';
 
 export class GCPubSubClient extends ClientProxy {
-  public readonly clientId: UUID;
+  public readonly clientId: string;
 
   protected readonly logger = new Logger(GCPubSubClient.name);
 
@@ -54,6 +55,7 @@ export class GCPubSubClient extends ClientProxy {
   protected readonly autoResume: boolean;
   protected readonly createSubscriptionOptions: CreateSubscriptionOptions;
   protected readonly autoDeleteSubscriptionOnShutdown: boolean;
+  protected readonly autoDeleteReplyTopicOnShutdown: boolean;
   protected readonly clientIdFilter: boolean;
   protected readonly parser: IGCPubSubParser;
 
@@ -65,7 +67,7 @@ export class GCPubSubClient extends ClientProxy {
 
   constructor(protected readonly options: GCPubSubClientOptions) {
     super();
-    this.clientId = randomUUID();
+    this.clientId = uuidV4();
 
     this.clientConfig = this.options.client || GC_PUBSUB_DEFAULT_CLIENT_CONFIG;
 
@@ -84,6 +86,9 @@ export class GCPubSubClient extends ClientProxy {
     if (this.options.appendClientIdToSubscription)
       this.replySubscriptionName += '-' + this.clientId;
 
+    if (this.options.appendClientIdToReplyTopic)
+      this.replyTopicName += '-' + this.clientId;
+
     this.noAck = this.options.noAck ?? GC_PUBSUB_DEFAULT_NO_ACK;
     this.init = this.options.init ?? GC_PUBSUB_DEFAULT_INIT;
     this.checkExistence =
@@ -95,7 +100,11 @@ export class GCPubSubClient extends ClientProxy {
 
     this.autoDeleteSubscriptionOnShutdown =
       this.options.autoDeleteSubscriptionOnShutdown ??
-      GC_AUTO_DELETE_SUBCRIPTION_ON_SHUTDOWN;
+      GC_AUTO_DELETE_SUBSCRIPTION_ON_SHUTDOWN;
+
+    this.autoDeleteReplyTopicOnShutdown =
+      this.options.autoDeleteReplyTopicOnShutdown ??
+      GC_AUTO_DELETE_REPLY_TOPIC_ON_SHUTDOWN;
 
     this.clientIdFilter =
       this.options.clientIdFilter ?? GC_PUBSUB_DEFAULT_CLIENT_ID_FILTER;
@@ -112,6 +121,9 @@ export class GCPubSubClient extends ClientProxy {
 
   public async close(): Promise<void> {
     await flushTopic(this.topic);
+    if (this.autoDeleteReplyTopicOnShutdown) {
+      await this.client.topic(this.replyTopicName).delete();
+    }
     if (this.autoDeleteSubscriptionOnShutdown) {
       try {
         await this.replySubscription.delete();

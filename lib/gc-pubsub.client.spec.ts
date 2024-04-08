@@ -285,6 +285,7 @@ describe('GCPubSubClient', () => {
           replyTopic: 'replyTopic',
           replySubscription: 'replySubscription',
           appendClientIdToSubscription: true,
+          appendClientIdToReplyTopic: true,
         });
 
         try {
@@ -320,6 +321,13 @@ describe('GCPubSubClient', () => {
         it('should append clientId to subscription name', () => {
           expect(client['replySubscriptionName']).to.equal(
             `replySubscription-${client.clientId}`,
+          );
+        });
+      });
+      describe('when appendClientIdToReplyTopic is true', () => {
+        it('should append clientId to reply topic name', () => {
+          expect(client['replyTopicName']).to.equal(
+            `replyTopic-${client.clientId}`,
           );
         });
       });
@@ -480,33 +488,43 @@ describe('GCPubSubClient', () => {
   });
 
   describe('close', () => {
-    beforeEach(async () => {
-      client = getInstance({
-        replyTopic: 'replyTopic',
-        replySubscription: 'replySubcription',
+    describe('default', () => {
+      beforeEach(async () => {
+        client = getInstance({
+          replyTopic: 'replyTopic',
+          replySubscription: 'replySubcription',
+        });
+        await client.connect();
+        await client.close();
       });
-      await client.connect();
-      await client.close();
-    });
 
-    it('should call "replySubscription.close"', function () {
-      expect(subscriptionMock.close.called).to.be.true;
-    });
+      it('should call "replySubscription.close"', function () {
+        expect(subscriptionMock.close.called).to.be.true;
+      });
 
-    it('should close() pubsub', () => {
-      expect(pubsub.close.called).to.be.true;
-    });
+      it('should close() pubsub', () => {
+        expect(pubsub.close.called).to.be.true;
+      });
 
-    it('should set "client" to null', () => {
-      expect((client as any).client).to.be.null;
-    });
+      it('should set "client" to null', () => {
+        expect((client as any).client).to.be.null;
+      });
 
-    it('should set "topic" to null', () => {
-      expect((client as any).topic).to.be.null;
-    });
+      it('should set "topic" to null', () => {
+        expect((client as any).topic).to.be.null;
+      });
 
-    it('should set "replySubscription" to null', () => {
-      expect((client as any).replySubscription).to.be.null;
+      it('should set "replySubscription" to null', () => {
+        expect((client as any).replySubscription).to.be.null;
+      });
+
+      it('should not delete topic', () => {
+        expect(topicMock.delete.called).to.be.false;
+      });
+
+      it('should not delete subscription', () => {
+        expect(subscriptionMock.delete.called).to.be.false;
+      });
     });
 
     describe('autoDeleteSubscriptionOnClose is true', () => {
@@ -521,6 +539,25 @@ describe('GCPubSubClient', () => {
       });
       it('should delete subscription on close', () => {
         expect(subscriptionMock.delete.calledOnce).to.be.true;
+      });
+    });
+
+    describe('autoDeleteReplyTopicOnShutdown is true', () => {
+      beforeEach(async () => {
+        client = getInstance({
+          autoDeleteReplyTopicOnShutdown: true,
+          replyTopic: 'replyTopic',
+          replySubscription: 'replySubcription',
+        });
+        await client.connect();
+        await client.close();
+      });
+      it('should delete subscription on close', () => {
+        expect(pubsub.topic.getCall(1).args[0]).to.eql(
+          client['replyTopicName'],
+        );
+        const topic = pubsub.topic.getCall(1).returnValue;
+        expect(topic.delete.calledOnce).to.be.true;
       });
     });
   });
@@ -625,7 +662,8 @@ describe('GCPubSubClient', () => {
       publishMessage: sandbox.stub().resolves(),
       exists: sandbox.stub().resolves([true]),
       subscription: sandbox.stub().returns(subscriptionMock),
-      resumePublishing: sinon.stub().resolves(),
+      resumePublishing: sandbox.stub().resolves(),
+      delete: sandbox.stub().resolves(),
     };
 
     pubsub = {
@@ -633,7 +671,9 @@ describe('GCPubSubClient', () => {
       close: sandbox.stub().callsFake((callback) => callback()),
     };
 
-    createClient = sandbox.stub(client, 'createClient').callsFake(() => pubsub);
+    createClient = sandbox.stub(client, 'createClient').callsFake(() => {
+      return pubsub;
+    });
     return client;
   }
 });
