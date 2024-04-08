@@ -121,9 +121,6 @@ export class GCPubSubClient extends ClientProxy {
 
   public async close(): Promise<void> {
     await flushTopic(this.topic);
-    if (this.autoDeleteReplyTopicOnShutdown) {
-      await this.client.topic(this.replyTopicName).delete();
-    }
     if (this.autoDeleteSubscriptionOnShutdown) {
       try {
         await this.replySubscription.delete();
@@ -132,6 +129,12 @@ export class GCPubSubClient extends ClientProxy {
       }
     } else {
       await closeSubscription(this.replySubscription);
+    }
+    if (this.autoDeleteReplyTopicOnShutdown && this.client) {
+      const replyTopic = this.client.topic(this.replyTopicName);
+      if (replyTopic) {
+        await replyTopic.delete();
+      }
     }
     await closePubSub(this.client);
     this.client = null;
