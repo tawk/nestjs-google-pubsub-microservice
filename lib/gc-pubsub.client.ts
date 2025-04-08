@@ -16,7 +16,6 @@ import {
   ReadPacket,
   WritePacket,
 } from '@nestjs/microservices';
-import { ERROR_EVENT, MESSAGE_EVENT } from '@nestjs/microservices/constants';
 
 import {
   ALREADY_EXISTS,
@@ -39,8 +38,9 @@ import { GCPubSubMessageSerializer } from './gc-message.serializer';
 import { GCPubSubMessage } from './gc-message.builder';
 import { GCPubSubParser, IGCPubSubParser } from './gc-pubsub.parser';
 import { v4 as uuidV4 } from 'uuid';
+import { GCPubSubEvents } from './gc-pubsub.events';
 
-export class GCPubSubClient extends ClientProxy {
+export class GCPubSubClient extends ClientProxy<GCPubSubEvents> {
   public readonly clientId: string;
 
   protected readonly logger = new Logger(GCPubSubClient.name);
@@ -204,7 +204,7 @@ export class GCPubSubClient extends ClientProxy {
       }
 
       this.replySubscription
-        .on(MESSAGE_EVENT, async (message: Message) => {
+        .on('message', async (message: Message) => {
           try {
             await this.handleResponse(message);
             message.ack();
@@ -212,7 +212,7 @@ export class GCPubSubClient extends ClientProxy {
             this.logger.error(error);
           }
         })
-        .on(ERROR_EVENT, (err: any) => this.logger.error(err));
+        .on('error', (err: any) => this.logger.error(err));
     }
 
     return this.client;
@@ -356,5 +356,12 @@ export class GCPubSubClient extends ClientProxy {
         throw error;
       }
     }
+  }
+
+  public unwrap<T>(): T {
+    if (!this.client) {
+      throw new Error('Client is not initialized.');
+    }
+    return this.client as T;
   }
 }

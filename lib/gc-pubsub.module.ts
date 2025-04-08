@@ -8,7 +8,7 @@ import {
 } from '@nestjs/common';
 import { TimeoutInterceptor } from './gc-pubsub.timeout.decorator';
 import { GCPubSubClientOptions } from './gc-pubsub.interface';
-import { ClientProxy, Closeable } from '@nestjs/microservices';
+import { ClientProxy } from '@nestjs/microservices';
 import { GCPubSubClient } from './gc-pubsub.client';
 import { getGCPubSubClientToken } from './gc-client.inject.decorator';
 
@@ -95,7 +95,7 @@ export class GCPubSubClientModule {
     };
   }
 
-  private static assignOnAppShutdownHook(client: ClientProxy & Closeable) {
+  private static assignOnAppShutdownHook(client: ClientProxy) {
     (client as unknown as OnApplicationShutdown).onApplicationShutdown =
       client.close;
     return client;

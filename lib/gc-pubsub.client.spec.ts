@@ -19,6 +19,9 @@ describe('GCPubSubClient', () => {
 
   beforeEach(() => {
     sandbox = sinon.createSandbox();
+    Object.defineProperty(global, 'performance', {
+      writable: true,
+    });
     clock = sandbox.useFakeTimers();
   });
 
