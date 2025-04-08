@@ -16,11 +16,7 @@ import {
   Server,
 } from '@nestjs/microservices';
 import { Logger } from '@nestjs/common';
-import {
-  ERROR_EVENT,
-  MESSAGE_EVENT,
-  NO_MESSAGE_HANDLER,
-} from '@nestjs/microservices/constants';
+import { NO_MESSAGE_HANDLER } from '@nestjs/microservices/constants';
 import { isString, isUndefined } from '@nestjs/common/utils/shared.utils';
 
 import { GCPubSubServerOptions } from './gc-pubsub.interface';
@@ -40,8 +36,12 @@ import { GCPubSubContext } from './gc-pubsub.context';
 import { closePubSub, closeSubscription, flushTopic } from './gc-pubsub.utils';
 import { GCPubSubParser, IGCPubSubParser } from './gc-pubsub.parser';
 import { GCPubSubResponseSerializer } from './gc-message.serializer';
+import { GCPubSubEvents } from './gc-pubsub.events';
 
-export class GCPubSubServer extends Server implements CustomTransportStrategy {
+export class GCPubSubServer
+  extends Server<GCPubSubEvents>
+  implements CustomTransportStrategy
+{
   protected logger = new Logger(GCPubSubServer.name);
 
   protected readonly clientConfig: ClientConfig;
@@ -56,6 +56,10 @@ export class GCPubSubServer extends Server implements CustomTransportStrategy {
   protected readonly createSubscriptionOptions: CreateSubscriptionOptions;
   protected readonly ackAfterResponse: boolean;
   protected readonly parser: IGCPubSubParser;
+  protected pendingEventListeners: Array<{
+    event: keyof GCPubSubEvents;
+    callback: GCPubSubEvents[keyof GCPubSubEvents];
+  }> = [];
 
   public client: PubSub | null = null;
   public subscription: Subscription | null = null;
@@ -130,14 +134,19 @@ export class GCPubSubServer extends Server implements CustomTransportStrategy {
       }
     }
 
+    this.pendingEventListeners.forEach(({ event, callback }) => {
+      this.subscription.on(event, callback as any);
+    });
+    this.pendingEventListeners = [];
+
     this.subscription
-      .on(MESSAGE_EVENT, async (message: Message) => {
+      .on('message', async (message: Message) => {
         await this.handleMessage(message);
         if (this.noAck) {
           message.ack();
         }
       })
-      .on(ERROR_EVENT, (err: any) => {
+      .on('error', (err: any) => {
         this.logger.error(err);
       });
 
@@ -156,6 +165,7 @@ export class GCPubSubServer extends Server implements CustomTransportStrategy {
     this.replyTopics.clear();
 
     await closePubSub(this.client);
+    this.pendingEventListeners = [];
   }
 
   public async handleMessage(message: Message) {
@@ -288,5 +298,23 @@ export class GCPubSubServer extends Server implements CustomTransportStrategy {
 
   public createClient() {
     return new PubSub(this.clientConfig);
+  }
+
+  public on<
+    EventKey extends keyof GCPubSubEvents = keyof GCPubSubEvents,
+    EventCallback extends GCPubSubEvents[EventKey] = GCPubSubEvents[EventKey],
+  >(event: EventKey, callback: EventCallback) {
+    if (this.subscription) {
+      this.subscription.on(event, callback as any);
+    } else {
+      this.pendingEventListeners.push({ event, callback });
+    }
+  }
+
+  public unwrap<T>(): T {
+    if (!this.client) {
+      throw new Error('Client is not initialized.');
+    }
+    return this.client as T;
   }
 }
