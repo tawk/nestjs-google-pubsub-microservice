@@ -309,6 +309,30 @@ describe('GCPubSubServer', () => {
         }),
       ).to.be.true;
     });
+
+    it('should log warn and not reject when reply topic is not found (NOT_FOUND)', async () => {
+      const notFoundError = Object.assign(new Error('Topic not found'), {
+        code: 5,
+      });
+      topicMock.publishMessage = sandbox.stub().rejects(notFoundError);
+
+      await server.sendMessage({ test: true }, 'missing-topic', '1');
+    });
+
+    it('should log error and not reject for generic publish errors', async () => {
+      const unavailableError = Object.assign(new Error('UNAVAILABLE'), {
+        code: 14,
+      });
+      topicMock.publishMessage = sandbox.stub().rejects(unavailableError);
+
+      await server.sendMessage({ test: true }, 'reply-topic', '2');
+    });
+
+    it('should log error and not reject when error has no code', async () => {
+      topicMock.publishMessage = sandbox.stub().rejects(new Error('boom'));
+
+      await server.sendMessage({ test: true }, 'reply-topic', '3');
+    });
   });
 
   describe('handleEvent', () => {
