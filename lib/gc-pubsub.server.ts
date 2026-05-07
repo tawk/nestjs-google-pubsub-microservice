@@ -35,6 +35,7 @@ import {
   GC_PUBSUB_DEFAULT_TOPIC,
   GC_PUBSUB_DEFAULT_CHECK_EXISTENCE,
   GC_PUBSUB_DEFAULT_ACK_AFTER_RESPONSE,
+  NOT_FOUND,
 } from './gc-pubsub.constants';
 import { GCPubSubContext } from './gc-pubsub.context';
 import { closePubSub, closeSubscription, flushTopic } from './gc-pubsub.utils';
@@ -258,18 +259,34 @@ export class GCPubSubServer extends Server implements CustomTransportStrategy {
 
     this.replyTopics.add(replyTo);
 
-    await this.client.topic(replyTo, this.publisherConfig).publishMessage({
-      data: outgoingResponse.data,
-      attributes: {
-        id,
-        ...attributes,
-        ...(outgoingResponse.isDisposed ? { isDisposed: '1' } : {}),
-        ...(outgoingResponse.err
-          ? { err: JSON.stringify(outgoingResponse.err) }
-          : {}),
-        ...(outgoingResponse.status ? { status: outgoingResponse.status } : {}),
-      },
-    });
+    try {
+      await this.client.topic(replyTo, this.publisherConfig).publishMessage({
+        data: outgoingResponse.data,
+        attributes: {
+          id,
+          ...attributes,
+          ...(outgoingResponse.isDisposed ? { isDisposed: '1' } : {}),
+          ...(outgoingResponse.err
+            ? { err: JSON.stringify(outgoingResponse.err) }
+            : {}),
+          ...(outgoingResponse.status
+            ? { status: outgoingResponse.status }
+            : {}),
+        },
+      });
+    } catch (err: any) {
+      if (err?.code === NOT_FOUND) {
+        this.logger.warn(
+          `Reply topic ${replyTo} not found; skipping reply for id ${id}`,
+        );
+      } else {
+        this.logger.error(
+          `Failed to publish reply to ${replyTo} for id ${id}: ${
+            err?.message ?? err
+          }`,
+        );
+      }
+    }
   }
 
   protected initializeSerializer(options: GCPubSubServerOptions): void {
