@@ -320,7 +320,9 @@ describe('GCPubSubClient', () => {
         } catch (error) {
           failure = error as Error;
         }
-        expect(failure?.message).to.contain('shared does not exist');
+        expect(failure?.message).to.equal(
+          'PubSub client is not connected: topic shared does not exist',
+        );
         expect(topicMock.create.called).to.be.false;
         expect(subscriptionMock.create.called).to.be.false;
       });
