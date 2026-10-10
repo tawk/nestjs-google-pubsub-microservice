@@ -11,6 +11,7 @@ export interface GCPubSubClientOptions {
   replySubscription: string;
   noAck?: boolean;
   init?: boolean;
+  initializeReplyTopic?: boolean;
   checkExistence?: boolean;
   publisher?: PublishOptions;
   subscriber?: SubscriberOptions;

@@ -63,6 +63,7 @@ export class GCPubSubClient extends ClientProxy<GCPubSubEvents> {
   public replySubscription: Subscription | null = null;
   public topic: Topic | null = null;
   protected init: boolean;
+  protected readonly initializeReplyTopic: boolean;
   protected readonly checkExistence: boolean;
 
   constructor(protected readonly options: GCPubSubClientOptions) {
@@ -91,6 +92,7 @@ export class GCPubSubClient extends ClientProxy<GCPubSubEvents> {
 
     this.noAck = this.options.noAck ?? GC_PUBSUB_DEFAULT_NO_ACK;
     this.init = this.options.init ?? GC_PUBSUB_DEFAULT_INIT;
+    this.initializeReplyTopic = this.options.initializeReplyTopic ?? true;
     this.checkExistence =
       this.options.checkExistence ?? GC_PUBSUB_DEFAULT_CHECK_EXISTENCE;
     this.autoResume = this.options.autoResume ?? GC_PUBSUB_DEFAULT_AUTO_RESUME;
@@ -164,7 +166,7 @@ export class GCPubSubClient extends ClientProxy<GCPubSubEvents> {
     if (this.replyTopicName && this.replySubscriptionName) {
       const replyTopic = this.client.topic(this.replyTopicName);
 
-      if (this.init) {
+      if (this.init && this.initializeReplyTopic) {
         await this.createIfNotExists(replyTopic.create.bind(replyTopic));
       } else if (this.checkExistence) {
         const [exists] = await replyTopic.exists();
@@ -262,19 +264,30 @@ export class GCPubSubClient extends ClientProxy<GCPubSubEvents> {
       const packet = this.assignPacketId(partialPacket);
       this.routingMap.set(packet.id, callback);
 
-      const cleanup = () => this.routingMap.delete(packet.id);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      let isDisposed = false;
+      const cleanup = () => {
+        isDisposed = true;
+        if (timer !== undefined) {
+          clearTimeout(timer);
+          timer = undefined;
+        }
+        return this.routingMap.delete(packet.id);
+      };
       const errorCallback = (err: unknown) => {
+        if (isDisposed) return;
         cleanup();
         callback({ err });
       };
 
-      Promise.resolve(
-        this.serializer.serialize(packet, {
+      const publishMessage = async () => {
+        const serializedPacket = (await this.serializer.serialize(packet, {
           message: {
             ...packet.data,
           },
-        }),
-      ).then((serializedPacket: GCPubSubMessage) => {
+        })) as GCPubSubMessage;
+        if (isDisposed) return;
+
         const attributes = {
           _replyTo: this.replyTopicName,
           _pattern: JSON.stringify(this.getRequestPattern(packet.pattern)),
@@ -282,29 +295,30 @@ export class GCPubSubClient extends ClientProxy<GCPubSubEvents> {
           _clientId: this.clientId,
           ...(serializedPacket.attributes && serializedPacket.attributes),
         };
-        if (this.topic) {
-          this.topic
-            .publishMessage({
-              data: serializedPacket.data,
-              orderingKey: serializedPacket.orderingKey,
-              attributes: attributes,
-            })
-            .catch((err) => {
-              if (this.autoResume && serializedPacket.orderingKey) {
-                this.topic.resumePublishing(serializedPacket.orderingKey);
-              }
-              callback({ err });
-            });
-        } else {
+        if (!this.topic) {
           errorCallback(new Error('Topic is not created'));
+          return;
         }
-
+        const topic = this.topic;
         if (serializedPacket.attributes._timeout) {
-          setTimeout(() => {
+          timer = setTimeout(() => {
             errorCallback(new RequestTimeoutException('Message Timeout'));
           }, Number(serializedPacket.attributes._timeout));
         }
-      });
+        try {
+          await topic.publishMessage({
+            data: serializedPacket.data,
+            orderingKey: serializedPacket.orderingKey,
+            attributes,
+          });
+        } catch (err) {
+          if (this.autoResume && serializedPacket.orderingKey) {
+            topic.resumePublishing(serializedPacket.orderingKey);
+          }
+          errorCallback(err);
+        }
+      };
+      void publishMessage().catch(errorCallback);
 
       return cleanup;
     } catch (err) {

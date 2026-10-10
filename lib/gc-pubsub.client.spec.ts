@@ -282,6 +282,50 @@ describe('GCPubSubClient', () => {
       });
     });
 
+    describe('when the reply topic is preprovisioned', () => {
+      it('should check the shared topic and create only a filtered subscription', async () => {
+        client = getInstance({
+          init: true,
+          initializeReplyTopic: false,
+          checkExistence: true,
+          replyTopic: 'shared',
+          replySubscription: 'reply',
+          clientIdFilter: true,
+          appendClientIdToSubscription: true,
+        });
+        await client.connect();
+        expect(topicMock.create.called).to.be.false;
+        expect(topicMock.exists.callCount).to.equal(2);
+        expect(subscriptionMock.create.calledOnce).to.be.true;
+        expect(subscriptionMock.create.firstCall.args[0]).to.eql({
+          filter: `attributes._clientId = "${client.clientId}"`,
+        });
+        expect(client['replyTopicName']).to.equal('shared');
+        expect(client['replySubscriptionName']).to.equal(
+          `reply-${client.clientId}`,
+        );
+      });
+      it('should reject a missing preprovisioned reply topic without creating it', async () => {
+        client = getInstance({
+          init: true,
+          initializeReplyTopic: false,
+          checkExistence: true,
+          replyTopic: 'shared',
+          replySubscription: 'reply',
+        });
+        topicMock.exists.onSecondCall().resolves([false]);
+        let failure: Error | undefined;
+        try {
+          await client.connect();
+        } catch (error) {
+          failure = error as Error;
+        }
+        expect(failure?.message).to.contain('shared does not exist');
+        expect(topicMock.create.called).to.be.false;
+        expect(subscriptionMock.create.called).to.be.false;
+      });
+    });
+
     describe('when is connected', () => {
       beforeEach(async () => {
         client = getInstance({
@@ -411,6 +455,104 @@ describe('GCPubSubClient', () => {
 
       // eslint-disable-next-line @typescript-eslint/no-empty-function
       client['publish'](msg, (): any => {});
+    });
+
+    it('should release the request timer after a completed native response', async () => {
+      const message = {
+        data: new GCPubSubMessageBuilder('data').setTimeout(44000).build(),
+        pattern: 'test',
+      };
+      const cleanup = client['publish'](message, (packet) => {
+        callback(packet);
+        if (packet.isDisposed) cleanup();
+      });
+      await clock.tickAsync(0);
+      expect(clock.countTimers()).to.equal(1);
+      const id = topicMock.publishMessage.firstCall.args[0].attributes._id;
+      await client.handleResponse({
+        data: Buffer.from(
+          JSON.stringify({ id, response: 'accepted', isDisposed: true }),
+        ),
+        attributes: { _id: id },
+      });
+      expect(client['routingMap'].size).to.equal(0);
+      expect(clock.countTimers()).to.equal(0);
+      await clock.tickAsync(45000);
+      expect(callback.calledOnce).to.be.true;
+    });
+
+    it('should release the timer on unsubscribe and ignore a late broker response', async () => {
+      const cleanup = client['publish'](
+        {
+          data: new GCPubSubMessageBuilder('data').setTimeout(44000).build(),
+          pattern: 'test',
+        },
+        callback,
+      );
+      await clock.tickAsync(0);
+      expect(clock.countTimers()).to.equal(1);
+      const id = topicMock.publishMessage.firstCall.args[0].attributes._id;
+      cleanup();
+      expect(clock.countTimers()).to.equal(0);
+      expect(client['routingMap'].size).to.equal(0);
+      expect(
+        await client.handleResponse({
+          data: Buffer.from(
+            JSON.stringify({ id, response: 'accepted', isDisposed: true }),
+          ),
+          attributes: { _id: id },
+        }),
+      ).to.be.false;
+      await clock.tickAsync(45000);
+      expect(callback.called).to.be.false;
+    });
+
+    it('should skip publishing and timer creation after unsubscribe during asynchronous serialization', async () => {
+      const serialized = new GCPubSubMessageBuilder('data')
+        .setTimeout(44000)
+        .build();
+      let resolveSerialization: (value: unknown) => void;
+      (client['serializer'].serialize as sinon.SinonSpy).restore();
+      sandbox.stub(client['serializer'], 'serialize').returns(
+        new Promise((resolve) => {
+          resolveSerialization = resolve;
+        }),
+      );
+      const cleanup = client['publish'](msg, callback);
+      cleanup();
+      resolveSerialization!(serialized);
+      await clock.tickAsync(0);
+      expect(topicMock.publishMessage.called).to.be.false;
+      expect(clock.countTimers()).to.equal(0);
+      expect(client['routingMap'].size).to.equal(0);
+      expect(callback.called).to.be.false;
+    });
+
+    it('should deliver asynchronous serializer failures once and remove pending routing', async () => {
+      const error = new Error('serializer failed');
+      (client['serializer'].serialize as sinon.SinonSpy).restore();
+      sandbox.stub(client['serializer'], 'serialize').rejects(error);
+      client['publish'](msg, callback);
+      await clock.tickAsync(0);
+      expect(callback.calledOnce).to.be.true;
+      expect(callback.firstCall.args[0]).to.eql({ err: error });
+      expect(client['routingMap'].size).to.equal(0);
+      expect(clock.countTimers()).to.equal(0);
+    });
+
+    it('should clear the deadline when a broker publish fails', async () => {
+      topicMock.publishMessage.rejects(new Error('broker unavailable'));
+      client['publish'](
+        {
+          data: new GCPubSubMessageBuilder('data').setTimeout(44000).build(),
+          pattern: 'test',
+        },
+        callback,
+      );
+      await clock.tickAsync(0);
+      expect(callback.calledOnce).to.be.true;
+      expect(client['routingMap'].size).to.equal(0);
+      expect(clock.countTimers()).to.equal(0);
     });
 
     it('should setTimeout to call callback with timeout error when timeout is provided', (done) => {
