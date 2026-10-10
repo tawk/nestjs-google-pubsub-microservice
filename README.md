@@ -71,8 +71,12 @@ The `options` property is specific to the chosen transporter. The <strong>GCloud
     <td>If <code>false</code>, topics and subscriptions will not be created, only validated</td>
   </tr>
   <tr>
+    <td><code>initializeReplyTopic</code></td>
+    <td>Client only, defaults to <code>true</code>. Set to <code>false</code> to use a preprovisioned reply topic while <code>init: true</code> still creates the client subscription. With <code>checkExistence: true</code>, a missing reply topic rejects the connection.</td>
+  </tr>
+  <tr>
     <td><code>checkExistence</code></td>
-    <td>If <code>false</code>, topics and subscriptions will not be checked, only used. This only applies when <code>init</code> is <code>false</code></td>
+    <td>If <code>false</code>, topics and subscriptions will not be checked, only used. Checks apply to resources whose initialization is disabled.</td>
   </tr>
   <tr>
     <td><code>client</code></td>
